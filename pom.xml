@@ -109,6 +109,11 @@
                         <artifactId>plexus-archiver</artifactId>
                         <version>${plexus.archiver.version}</version>
                     </dependency>
+                    <dependency>
+                        <groupId>org.fusesource.jansi</groupId>
+                        <artifactId>jansi</artifactId>
+                        <version>1.18</version>
+                    </dependency>
                 </dependencies>
                 <executions>
                     <execution>

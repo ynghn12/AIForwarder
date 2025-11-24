@@ -180,7 +180,9 @@ object Main extends App {
   private val earsClient = new EarsClient(config)
   private val routes = new ForwarderRoutes(config, repo, earsClient)
 
-  Http().newServerAt(config.interface, config.port).bind(routes.route).onComplete {
+  private val bindingF = Http().bindAndHandle(routes.route, config.interface, config.port)
+
+  bindingF.onComplete {
     case scala.util.Success(binding) =>
       val address = binding.localAddress
       logger.info(s"AITriggerForwarder started on ${address.getHostString}:${address.getPort}")
