@@ -31,7 +31,7 @@ object JsonFormats extends DefaultJsonProtocol {
 
 final case class AiTriggerRequest(eqpid: String, scname: String)
 final case class ResponseStatus(status: String)
-final case class EqpInfo(id: String, process: String, model: String, lineDesc: String)
+final case class EqpInfo(id: String, process: String, model: String, lineDesc: String, ip: Option[String])
 
 final case class ForwarderConfig(
     interface: String,
@@ -109,7 +109,8 @@ class MongoEqpInfoRepository(cfg: MongoConfig)(implicit ec: ExecutionContext) ex
           id = doc.getString("eqpId"),
           process = doc.getString("process"),
           model = doc.getString("eqpModel"),
-          lineDesc = doc.getString("lineDesc")
+          lineDesc = doc.getString("lineDesc"),
+          ip = Option(doc.getString("ipAddr")).map(_.trim).filter(_.nonEmpty)
         )
       }
     }.recover {
@@ -201,6 +202,7 @@ class ForwarderRoutes(
               logger.info(s"Received AI trigger: txn=$txn, eqpid=$trimmedEqp, scname=$trimmedScn, clientIp=$ip")
               onComplete(repo.find(trimmedEqp)) {
                 case scala.util.Success(Some(eqpInfo)) =>
+                  logger.info(s"EQP_INFO found: txn=$txn, eqpid=${eqpInfo.id}, process=${eqpInfo.process}, model=${eqpInfo.model}, ip=${eqpInfo.ip.getOrElse("N/A")}")
                   onComplete(earsClient.callEars(req.copy(eqpid = trimmedEqp, scname = trimmedScn), eqpInfo, txn)) {
                     case scala.util.Success(resp) if resp.status.isSuccess() =>
                       resp.discardEntityBytes()
