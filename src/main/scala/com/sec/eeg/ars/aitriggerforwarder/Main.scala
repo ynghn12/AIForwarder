@@ -135,7 +135,7 @@ class EarsClient(config: ForwarderConfig)(implicit system: ActorSystem, mat: Mat
       RawHeader("eqpid", req.eqpid),
       RawHeader("name", req.scname),
       RawHeader("txn", txn),
-      RawHeader("triggeredBy", "AI")
+      RawHeader("triggerBy", "AI")
     )
 
     val bodyJson = JsObject(
