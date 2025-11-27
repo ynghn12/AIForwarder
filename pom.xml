@@ -16,6 +16,7 @@
         <akka.version>2.6.20</akka.version>
         <akka.http.version>10.1.15</akka.http.version>
         <log4j.version>2.17.1</log4j.version>
+        <mongo.scala.driver.version>2.9.0</mongo.scala.driver.version>
     </properties>
 
     <dependencies>
@@ -64,6 +65,13 @@
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-slf4j_2.12</artifactId>
             <version>${akka.version}</version>
+        </dependency>
+
+        <!-- MongoDB Scala Driver -->
+        <dependency>
+            <groupId>org.mongodb.scala</groupId>
+            <artifactId>mongo-scala-driver_2.12</artifactId>
+            <version>${mongo.scala.driver.version}</version>
         </dependency>
 
         <!-- Log4j 2 -->

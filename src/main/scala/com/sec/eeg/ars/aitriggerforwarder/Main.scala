@@ -18,6 +18,11 @@ import spray.json._
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.control.NonFatal
+import java.util.concurrent.TimeUnit
+import org.mongodb.scala._
+import org.mongodb.scala.model.Filters._
+import scala.collection.JavaConverters._
 
 object JsonFormats extends DefaultJsonProtocol {
   implicit val aiTriggerFormat: RootJsonFormat[AiTriggerRequest] = jsonFormat2(AiTriggerRequest)
@@ -33,17 +38,31 @@ final case class ForwarderConfig(
     port: Int,
     earsUrl: String,
     earsTimeout: FiniteDuration,
-    responseStatus: String)
+    responseStatus: String,
+    mongo: MongoConfig)
 
 object ForwarderConfig {
   def load(): ForwarderConfig = {
     val config = ConfigFactory.load().getConfig("forwarder")
+    val mongoCfg = config.getConfig("mongo")
     ForwarderConfig(
       interface = config.getString("interface"),
       port = config.getInt("port"),
       earsUrl = config.getString("ears.url"),
       earsTimeout = config.getDuration("ears.timeout").toMillis.millis,
-      responseStatus = config.getString("response-pass-status")
+      responseStatus = config.getString("response-pass-status"),
+      mongo = MongoConfig(
+        host = mongoCfg.getString("host"),
+        port = mongoCfg.getInt("port"),
+        database = mongoCfg.getString("database"),
+        collection = mongoCfg.getString("collection"),
+        username = mongoCfg.getString("username"),
+        password = mongoCfg.getString("password"),
+        authSource = mongoCfg.getString("authSource"),
+        tls = mongoCfg.getBoolean("tls"),
+        connectTimeout = mongoCfg.getDuration("connect-timeout").toMillis.millis,
+        socketTimeout = mongoCfg.getDuration("socket-timeout").toMillis.millis
+      )
     )
   }
 }
@@ -52,14 +71,55 @@ trait EqpInfoRepository {
   def find(eqpid: String): Future[Option[EqpInfo]]
 }
 
-/**
-  * Placeholder Mongo repository. Replace with real MongoDB lookup later.
-  */
-class StubEqpInfoRepository()(implicit ec: ExecutionContext) extends EqpInfoRepository {
+final case class MongoConfig(
+    host: String,
+    port: Int,
+    database: String,
+    collection: String,
+    username: String,
+    password: String,
+    authSource: String,
+    tls: Boolean,
+    connectTimeout: FiniteDuration,
+    socketTimeout: FiniteDuration)
+
+class MongoEqpInfoRepository(cfg: MongoConfig)(implicit ec: ExecutionContext) extends EqpInfoRepository with AutoCloseable {
+  private val logger = LogManager.getLogger(getClass)
+
+  private val credential =
+    MongoCredential.createCredential(cfg.username, cfg.authSource, cfg.password.toCharArray)
+
+  private val settings = MongoClientSettings.builder()
+    .applyToClusterSettings(_.hosts(List(new ServerAddress(cfg.host, cfg.port)).asJava))
+    .applyToSocketSettings { b =>
+      b.connectTimeout(cfg.connectTimeout.toMillis.toInt, TimeUnit.MILLISECONDS)
+      b.readTimeout(cfg.socketTimeout.toMillis.toInt, TimeUnit.MILLISECONDS)
+    }
+    .credential(credential)
+    .applyToSslSettings(_.enabled(cfg.tls))
+    .build()
+
+  private val client = MongoClient(settings)
+  private val collection = client.getDatabase(cfg.database).getCollection(cfg.collection)
+
   override def find(eqpid: String): Future[Option[EqpInfo]] = {
-    // TODO: replace with real MongoDB query to EQP_INFO
-    Future.successful(Some(EqpInfo(id = eqpid, process = "PROC", model = "MODEL", lineDesc = "LINE")))
+    collection.find(equal("eqpId", eqpid)).first().toFutureOption().map { optDoc =>
+      optDoc.map { doc =>
+        EqpInfo(
+          id = doc.getString("eqpId"),
+          process = doc.getString("process"),
+          model = doc.getString("eqpModel"),
+          lineDesc = doc.getString("lineDesc")
+        )
+      }
+    }.recover {
+      case NonFatal(ex) =>
+        logger.error(s"Mongo lookup failed for eqpid=$eqpid", ex)
+        None
+    }
   }
+
+  override def close(): Unit = client.close()
 }
 
 class EarsClient(config: ForwarderConfig)(implicit system: ActorSystem, mat: Materializer, ec: ExecutionContext) {
@@ -176,7 +236,7 @@ object Main extends App {
   private val logger = LogManager.getLogger(getClass)
   private val config = ForwarderConfig.load()
 
-  private val repo = new StubEqpInfoRepository()
+  private val repo = new MongoEqpInfoRepository(config.mongo)
   private val earsClient = new EarsClient(config)
   private val routes = new ForwarderRoutes(config, repo, earsClient)
 
@@ -191,6 +251,7 @@ object Main extends App {
 
   sys.addShutdownHook {
     logger.info("Shutting down AITriggerForwarder")
+    repo.close()
     system.terminate()
   }
 }
