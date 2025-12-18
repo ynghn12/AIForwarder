@@ -1,7 +1,5 @@
 package com.sec.eeg.ars.aitriggerforwarder
 
-import java.util.concurrent.atomic.AtomicLong
-
 import akka.actor.ActorSystem
 import akka.event.Logging
 import akka.http.scaladsl.Http
@@ -168,8 +166,7 @@ class EarsClient(config: ForwarderConfig)(implicit system: ActorSystem, mat: Mat
 }
 
 object TxnGenerator {
-  private val seq = new AtomicLong(0L)
-  def next(): String = s"${System.currentTimeMillis()}-${seq.getAndIncrement()}"
+  def next(): String = System.currentTimeMillis().toString
 }
 
 class ForwarderRoutes(
